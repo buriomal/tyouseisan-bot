@@ -33,10 +33,14 @@ def send_discord_notification(webhook_url, message):
 
 
 def parse_row(row_text):
-    """テーブルの行データから日付と◯△✕の数を抽出"""
+    """調整さんのテーブル行から日付と◯△✕の人数を抽出"""
+
+    # タブや改行で列を分割
     cols = re.split(r'[\t\n]+', row_text.strip())
+
     print(f"行データ解析中: {cols}")
 
+    # 日付 + ○ + △ + × の4列が必要
     if len(cols) < 4:
         print(" -> 列数が不足しています")
         return None
@@ -46,7 +50,7 @@ def parse_row(row_text):
     # 7/31
     # 07/31
     # 7月31日
-    # 7/31(金)
+    # 7/31(木)
     date_match = re.search(
         r"(\d{1,2})[/月](\d{1,2})日?\s*[（(]?([月火水木金土日])?[）)]?",
         cols[0]
@@ -60,9 +64,18 @@ def parse_row(row_text):
         month = int(date_match.group(1))
         day = int(date_match.group(2))
 
-        circle = int(cols[1])
-        triangle = int(cols[2])
-        cross = int(cols[3])
+        # 「7人」「1人」「0人」から数字だけを取り出す
+        circle_match = re.search(r"\d+", cols[1])
+        triangle_match = re.search(r"\d+", cols[2])
+        cross_match = re.search(r"\d+", cols[3])
+
+        if not circle_match or not triangle_match or not cross_match:
+            print(" -> 人数の解析に失敗しました")
+            return None
+
+        circle = int(circle_match.group())
+        triangle = int(triangle_match.group())
+        cross = int(cross_match.group())
 
         print(
             f" -> 抽出成功: "
@@ -70,7 +83,13 @@ def parse_row(row_text):
             f"(◯:{circle}, △:{triangle}, ✕:{cross})"
         )
 
-        return (month, day, circle, triangle, cross)
+        return (
+            month,
+            day,
+            circle,
+            triangle,
+            cross
+        )
 
     except ValueError as e:
         print(f" -> 数値変換エラー: {e}")
@@ -91,7 +110,10 @@ def check_and_notify():
     today = now.date()
     hour = now.hour
 
-    print(f"現在時刻 (JST): {now.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(
+        f"現在時刻 (JST): "
+        f"{now.strftime('%Y-%m-%d %H:%M:%S')}"
+    )
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -107,20 +129,32 @@ def check_and_notify():
 
         # ページのテーブルが読み込まれるまで最大10秒待機
         try:
-            page.wait_for_selector("table", timeout=10000)
+            page.wait_for_selector(
+                "table",
+                timeout=10000
+            )
             print("テーブルの読み込みを確認しました")
+
         except Exception as e:
-            print(f"テーブルの待機タイムアウト: {e}")
+            print(
+                f"テーブルの待機タイムアウト: {e}"
+            )
 
         # 調整さんのテーブル行を取得
-        rows = page.locator("table tr").all_inner_texts()
+        rows = page.locator(
+            "table tr"
+        ).all_inner_texts()
 
-        print(f"取得した行の数: {len(rows)}")
+        print(
+            f"取得した行の数: {len(rows)}"
+        )
 
         browser.close()
 
     if not rows:
-        print("テーブルの行が見つかりませんでした。")
+        print(
+            "テーブルの行が見つかりませんでした。"
+        )
         return
 
     # -----------------------------
@@ -128,12 +162,14 @@ def check_and_notify():
     # GitHub Actionsの遅延を考慮
     # -----------------------------
     if 19 <= hour <= 21:
-        print("19〜21時台チェック開始")
+
+        print(
+            "19〜21時台チェック開始"
+        )
 
         for row in rows:
 
-            # ここが重要
-            # rowをparse_row()に渡して解析する
+            # 調整さんの行を解析
             parsed = parse_row(row)
 
             if parsed is None:
@@ -147,7 +183,10 @@ def check_and_notify():
                 and day == today.day
                 and circle == 8
             ):
-                print("○8を発見しました")
+
+                print(
+                    "○8を発見しました"
+                )
 
                 send_discord_notification(
                     webhook_url,
@@ -156,9 +195,12 @@ def check_and_notify():
 
                 return
 
-        print("条件に一致しませんでした")
+        print(
+            "条件に一致しませんでした"
+        )
 
     else:
+
         print(
             f"現在時刻は{hour}時のため、"
             "19〜21時台チェックの対象外です"
