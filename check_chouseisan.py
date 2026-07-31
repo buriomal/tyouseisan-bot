@@ -322,7 +322,7 @@ def check_and_notify():
 
             send_discord_notification(
                 webhook_url,
-                "📢 **固定どしよね**"
+                "📢 **固定どしよね（△２↑）**"
             )
 
             return
@@ -363,7 +363,7 @@ def check_and_notify():
 
             send_discord_notification(
                 webhook_url,
-                "📢 **固定あるかも？**"
+                "📢 **固定あるかも？（△１）**"
             )
 
             return
