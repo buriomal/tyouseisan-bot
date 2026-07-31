@@ -1,13 +1,7 @@
-"""
-調整さんの出欠表をチェックして、
-「◯が7個」または「◯が6個かつ△が1個」の候補日が"今日"だったら
-Discordに通知を送るスクリプト。
-"""
-
 import os
 import re
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 import requests
 from playwright.sync_api import sync_playwright, TimeoutError
@@ -15,16 +9,8 @@ from playwright.sync_api import sync_playwright, TimeoutError
 JST = timezone(timedelta(hours=9))
 
 
-def match_status(circle: int, triangle: int) -> str | None:
-    if circle == 7:
-        return "確定"
-    if circle == 6 and triangle == 1:
-        return "仮確定"
-    return None
-
-
 def fetch_rows(url: str) -> list[str]:
-    """調整さんのページを取得して候補日一覧を返す"""
+    """調整さんの候補日一覧を取得"""
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -33,34 +19,35 @@ def fetch_rows(url: str) -> list[str]:
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/127.0.0.0 Safari/537.36"
+                "Chrome/137.0.0.0 Safari/537.36"
             )
         )
 
         try:
             print("ページを開いています...")
+
             page.goto(
                 url,
                 wait_until="domcontentloaded",
                 timeout=60000,
             )
 
-            # JS描画待ち
             page.wait_for_timeout(3000)
 
-            # テーブルが出るまで待つ
             page.wait_for_selector("table", timeout=30000)
 
             rows = page.locator("table tr").all_inner_texts()
 
-            print(f"{len(rows)}件の行を取得しました")
+            print(f"{len(rows)}件取得")
 
             browser.close()
+
             return rows
 
         except TimeoutError:
-            print("ページの読み込みがタイムアウトしました。")
-            print("現在のURL:", page.url)
+
+            print("ページの読み込みに失敗しました")
+            print(page.url)
 
             try:
                 print(page.content()[:2000])
@@ -71,9 +58,10 @@ def fetch_rows(url: str) -> list[str]:
             sys.exit(1)
 
 
-def parse_row(row_text: str):
+def parse_row(row_text):
+
     date_match = re.search(
-        r"(\d{1,2})[/月](\d{1,2})日?\s*[（(]?([月火水木金土日])?[）)]?",
+       r"(\d{1,2})[/月](\d{1,2})日?\s*[（(]?([月火水木金土日])?[）)]?",
         row_text,
     )
 
@@ -81,11 +69,12 @@ def parse_row(row_text: str):
         return None
 
     circle_match = (
-        re.search(r"○\s*(\d+)", row_text)
+       re.search(r"○\s*(\d+)", row_text)
         or re.search(r"◯\s*(\d+)", row_text)
     )
 
     triangle_match = re.search(r"△\s*(\d+)", row_text)
+
     cross_match = re.search(r"[×✕]\s*(\d+)", row_text)
 
     if not circle_match:
@@ -100,75 +89,117 @@ def parse_row(row_text: str):
     )
 
 
-def send_discord_notification(
-    webhook_url,
-    title,
-    month,
-    day,
-    circle,
-    triangle,
-    status,
-):
-    headline = "固定です！" if status == "確定" else "固定かも？"
+def send_discord_notification(webhook_url: str, message: str):
 
-    content = (
-        f"📅 **{title}**\n"
-        f"本日 {month}/{day} は **{headline}**\n"
-        f"◯ {circle} / △ {triangle}\n"
-        f"よければ確認してください。"
-    )
-
-    response = requests.post(
+    requests.post(
         webhook_url,
-        json={"content": content},
+        json={
+            "content": message
+        },
         timeout=15,
-    )
+    ).raise_for_status()
 
-    response.raise_for_status()
+def check_and_notify(rows, webhook_url):
 
+    now = datetime.now(JST)
+
+    today = now.date()
+    tomorrow = today + timedelta(days=1)
+
+    hour = now.hour
+    minute = now.minute
+
+    print(f"現在時刻 {hour}:{minute:02d}")
+
+    # -----------------------------
+    # 19:30実行
+    # 今日が○8なら通知
+    # -----------------------------
+    if hour == 19:
+
+        print("19時台チェック")
+
+        for row in rows:
+
+            parsed = parse_row(row)
+
+            if parsed is None:
+                continue
+
+            month, day, circle, triangle, cross = parsed
+
+            if (
+                month == today.month
+                and day == today.day
+                and circle == 8
+            ):
+
+                print("○8を発見")
+
+                send_discord_notification(
+                    webhook_url,
+                    "📢 **今日は固定あります！**"
+                )
+
+                return
+
+        print("条件に一致しませんでした")
+
+    # -----------------------------
+    # 21:30実行
+    # 明日が○7△1なら通知
+    # -----------------------------
+    elif hour == 21:
+
+        print("21時台チェック")
+
+        for row in rows:
+
+            parsed = parse_row(row)
+
+            if parsed is None:
+                continue
+
+            month, day, circle, triangle, cross = parsed
+
+            if (
+                month == tomorrow.month
+                and day == tomorrow.day
+                and circle == 7
+                and triangle == 1
+            ):
+
+                print("○7△1を発見")
+
+                send_discord_notification(
+                    webhook_url,
+                    "📢 **△の人はわかり次第連絡お願い♡**"
+                )
+
+                return
+
+        print("条件に一致しませんでした")
+
+    else:
+
+        print("通知時間外なので終了")
 
 def main():
+
     url = os.environ.get("CHOUSEISAN_URL")
     webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
 
-    if not url or not webhook_url:
-        print("環境変数が設定されていません")
+    if not url:
+        print("CHOUSEISAN_URL が設定されていません")
         sys.exit(1)
 
-    today = datetime.now(JST)
+    if not webhook_url:
+        print("DISCORD_WEBHOOK_URL が設定されていません")
+        sys.exit(1)
 
     rows = fetch_rows(url)
 
-    matched = False
-
-    for row in rows:
-        parsed = parse_row(row)
-
-        if not parsed:
-            continue
-
-        month, day, circle, triangle, cross = parsed
-
-        status = match_status(circle, triangle)
-
-        if (
-            month == today.month
-            and day == today.day
-            and status is not None
-        ):
-            send_discord_notification(
-                webhook_url,
-                "調整さん通知",
-                month,
-                day,
-                circle,
-                triangle,
-                status,
-            )
-            matched = True
-
-    if not matched:
-        print("今日は通知条件に一致しませんでした。")
+    check_and_notify(rows, webhook_url)
 
 
 if __name__ == "__main__":
