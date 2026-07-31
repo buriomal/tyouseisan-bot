@@ -1,6 +1,6 @@
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 from playwright.sync_api import sync_playwright
 import urllib.request
@@ -35,22 +35,15 @@ def send_discord_notification(webhook_url, message):
 def parse_row(row_text):
     """調整さんのテーブル行から日付と◯△✕の人数を抽出"""
 
-    # タブや改行で列を分割
     cols = re.split(r'[\t\n]+', row_text.strip())
 
     print(f"行データ解析中: {cols}")
 
-    # 日付 + ○ + △ + × の4列が必要
     if len(cols) < 4:
         print(" -> 列数が不足しています")
         return None
 
-    # 日付の抽出
-    # 例:
-    # 7/31
-    # 07/31
-    # 7月31日
-    # 7/31(木)
+    # 日付を抽出
     date_match = re.search(
         r"(\d{1,2})[/月](\d{1,2})日?\s*[（(]?([月火水木金土日])?[）)]?",
         cols[0]
@@ -64,7 +57,7 @@ def parse_row(row_text):
         month = int(date_match.group(1))
         day = int(date_match.group(2))
 
-        # 「7人」「1人」「0人」から数字だけを取り出す
+        # 「7人」「1人」「0人」から数字だけを抽出
         circle_match = re.search(r"\d+", cols[1])
         triangle_match = re.search(r"\d+", cols[2])
         cross_match = re.search(r"\d+", cols[3])
@@ -83,13 +76,7 @@ def parse_row(row_text):
             f"(◯:{circle}, △:{triangle}, ✕:{cross})"
         )
 
-        return (
-            month,
-            day,
-            circle,
-            triangle,
-            cross
-        )
+        return month, day, circle, triangle, cross
 
     except ValueError as e:
         print(f" -> 数値変換エラー: {e}")
@@ -109,8 +96,6 @@ def check_and_notify():
     now = datetime.now(jst)
 
     today = now.date()
-    hour = now.hour
-    minute = now.minute
 
     print(
         f"現在時刻 (JST): "
@@ -118,37 +103,14 @@ def check_and_notify():
     )
 
     # --------------------------------
-    # 実行時間の判定
-    #
-    # 19時台:
-    # 翌日の予定を確認
-    #
-    # 20〜21時台:
-    # 当日の予定を確認
+    # 当日の予定だけをチェック
     # --------------------------------
 
-    if 19 <= hour <= 19:
-        target_date = today + timedelta(days=1)
-        check_type = "翌日"
-
-    elif 20 <= hour <= 21:
-        target_date = today
-        check_type = "当日"
-
-    else:
-        print(
-            f"現在時刻は{hour}時のため、"
-            "チェック対象時間外です。"
-        )
-        return
-
-    print(
-        f"{check_type}の予定を確認します。"
-    )
+    print("当日の予定を確認します。")
 
     print(
         f"確認対象日: "
-        f"{target_date.strftime('%Y-%m-%d')}"
+        f"{today.strftime('%Y-%m-%d')}"
     )
 
     # --------------------------------
@@ -173,7 +135,6 @@ def check_and_notify():
             timeout=30000
         )
 
-        # テーブルが読み込まれるまで最大10秒待機
         try:
             page.wait_for_selector(
                 "table",
@@ -210,7 +171,7 @@ def check_and_notify():
         return
 
     # --------------------------------
-    # 取得した全行を解析
+    # 今日の日付の行を探す
     # --------------------------------
 
     for row in rows:
@@ -222,18 +183,15 @@ def check_and_notify():
 
         month, day, circle, triangle, cross = parsed
 
-        # --------------------------------
-        # 対象日と一致するか確認
-        # --------------------------------
-
+        # 今日の日付ではない場合はスキップ
         if (
-            month != target_date.month
-            or day != target_date.day
+            month != today.month
+            or day != today.day
         ):
             continue
 
         print(
-            f"対象日のデータを発見: "
+            f"今日のデータを発見: "
             f"{month}/{day}"
         )
 
@@ -244,23 +202,10 @@ def check_and_notify():
         )
 
         # --------------------------------
-        # パターン1
-        # ○8人
+        # ○8人以上
         # --------------------------------
 
         if circle >= 8:
-
-            if check_type == "翌日":
-
-                message = (
-                    "📢 **明日は固定あります！**"
-                )
-
-            else:
-
-                message = (
-                    "📢 **今日は固定あります！**"
-                )
 
             print(
                 f"○{circle}人なので通知します"
@@ -268,35 +213,30 @@ def check_and_notify():
 
             send_discord_notification(
                 webhook_url,
-                message
+                "📢 **今日は固定あります！**"
             )
 
             return
 
         # --------------------------------
-        # パターン2
         # ○7人 + △1人
         # --------------------------------
 
         if circle == 7 and triangle == 1:
 
-            message = (
-                "△の人は分かり次第連絡して♡"
-            )
-
             print(
-                "○7人 + △1人を確認しました"
+                "○7人 + △1人なので通知します"
             )
 
             send_discord_notification(
                 webhook_url,
-                message
+                "📢 **固定あるかも？**"
             )
 
             return
 
         # --------------------------------
-        # それ以外
+        # その他
         # --------------------------------
 
         print(
@@ -306,7 +246,7 @@ def check_and_notify():
         return
 
     print(
-        f"{target_date.month}/{target_date.day} "
+        f"{today.month}/{today.day} "
         "のデータが見つかりませんでした。"
     )
 
