@@ -9,11 +9,15 @@ import json
 
 def send_discord_notification(webhook_url, message):
     """DiscordのWebhookに通知を送信する"""
+
     if not webhook_url:
         print("Discord Webhook URLが設定されていません。")
         return
 
-    payload = {"content": message}
+    payload = {
+        "content": message
+    }
+
     data = json.dumps(payload).encode("utf-8")
 
     req = urllib.request.Request(
@@ -27,48 +31,102 @@ def send_discord_notification(webhook_url, message):
 
     try:
         with urllib.request.urlopen(req) as res:
-            print(f"Discord通知成功: ステータス {res.status}")
+            print(
+                f"Discord通知成功: ステータス {res.status}"
+            )
+
     except Exception as e:
-        print(f"Discord通知失敗: {e}")
+        print(
+            f"Discord通知失敗: {e}"
+        )
 
 
 def parse_row(row_text):
     """調整さんのテーブル行から日付と◯△✕の人数を抽出"""
 
-    cols = re.split(r'[\t\n]+', row_text.strip())
+    # タブや改行で列を分割
+    cols = re.split(
+        r'[\t\n]+',
+        row_text.strip()
+    )
 
-    print(f"行データ解析中: {cols}")
+    print(
+        f"行データ解析中: {cols}"
+    )
 
+    # 日付 + ○ + △ + × の4列が必要
     if len(cols) < 4:
-        print(" -> 列数が不足しています")
+        print(
+            " -> 列数が不足しています"
+        )
         return None
 
-    # 日付を抽出
+    # 日付の抽出
+    #
+    # 対応例:
+    # 7/31
+    # 07/31
+    # 7月31日
+    # 7/31(木)
+    #
     date_match = re.search(
         r"(\d{1,2})[/月](\d{1,2})日?\s*[（(]?([月火水木金土日])?[）)]?",
         cols[0]
     )
 
     if not date_match:
-        print(f" -> 日付がマッチしませんでした: {cols[0]}")
+        print(
+            f" -> 日付がマッチしませんでした: {cols[0]}"
+        )
         return None
 
     try:
-        month = int(date_match.group(1))
-        day = int(date_match.group(2))
 
-        # 「7人」「1人」「0人」から数字だけを抽出
-        circle_match = re.search(r"\d+", cols[1])
-        triangle_match = re.search(r"\d+", cols[2])
-        cross_match = re.search(r"\d+", cols[3])
+        month = int(
+            date_match.group(1)
+        )
 
-        if not circle_match or not triangle_match or not cross_match:
-            print(" -> 人数の解析に失敗しました")
+        day = int(
+            date_match.group(2)
+        )
+
+        # 「7人」「1人」「0人」などから数字だけを抽出
+        circle_match = re.search(
+            r"\d+",
+            cols[1]
+        )
+
+        triangle_match = re.search(
+            r"\d+",
+            cols[2]
+        )
+
+        cross_match = re.search(
+            r"\d+",
+            cols[3]
+        )
+
+        if (
+            not circle_match
+            or not triangle_match
+            or not cross_match
+        ):
+            print(
+                " -> 人数の解析に失敗しました"
+            )
             return None
 
-        circle = int(circle_match.group())
-        triangle = int(triangle_match.group())
-        cross = int(cross_match.group())
+        circle = int(
+            circle_match.group()
+        )
+
+        triangle = int(
+            triangle_match.group()
+        )
+
+        cross = int(
+            cross_match.group()
+        )
 
         print(
             f" -> 抽出成功: "
@@ -76,24 +134,51 @@ def parse_row(row_text):
             f"(◯:{circle}, △:{triangle}, ✕:{cross})"
         )
 
-        return month, day, circle, triangle, cross
+        return (
+            month,
+            day,
+            circle,
+            triangle,
+            cross
+        )
 
     except ValueError as e:
-        print(f" -> 数値変換エラー: {e}")
+
+        print(
+            f" -> 数値変換エラー: {e}"
+        )
+
         return None
 
 
 def check_and_notify():
-    url = os.environ.get("CHOUSEISAN_URL")
-    webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
 
+    # 環境変数からURLを取得
+    url = os.environ.get(
+        "CHOUSEISAN_URL"
+    )
+
+    webhook_url = os.environ.get(
+        "DISCORD_WEBHOOK_URL"
+    )
+
+    # 調整さんURLの確認
     if not url:
-        print("エラー: CHOUSEISAN_URL が設定されていません。")
+
+        print(
+            "エラー: CHOUSEISAN_URL が設定されていません。"
+        )
+
         return
 
     # 日本時間を取得
-    jst = ZoneInfo("Asia/Tokyo")
-    now = datetime.now(jst)
+    jst = ZoneInfo(
+        "Asia/Tokyo"
+    )
+
+    now = datetime.now(
+        jst
+    )
 
     today = now.date()
 
@@ -102,11 +187,9 @@ def check_and_notify():
         f"{now.strftime('%Y-%m-%d %H:%M:%S')}"
     )
 
-    # --------------------------------
-    # 当日の予定だけをチェック
-    # --------------------------------
-
-    print("当日の予定を確認します。")
+    print(
+        "当日の予定を確認します。"
+    )
 
     print(
         f"確認対象日: "
@@ -135,7 +218,9 @@ def check_and_notify():
             timeout=30000
         )
 
+        # テーブルが読み込まれるまで最大10秒待機
         try:
+
             page.wait_for_selector(
                 "table",
                 timeout=10000
@@ -162,6 +247,7 @@ def check_and_notify():
 
         browser.close()
 
+    # 行が取得できなかった場合
     if not rows:
 
         print(
@@ -176,8 +262,11 @@ def check_and_notify():
 
     for row in rows:
 
-        parsed = parse_row(row)
+        parsed = parse_row(
+            row
+        )
 
+        # 解析できなかった行はスキップ
         if parsed is None:
             continue
 
@@ -201,62 +290,63 @@ def check_and_notify():
             f"×:{cross}"
         )
 
-    # --------------------------------
-    # ×が1人以上
-    # --------------------------------
+        # --------------------------------
+        # ① ×が1人以上
+        # --------------------------------
 
-            if cross >= 1:
+        if cross >= 1:
 
             print(
                 f"×{cross}人なので通知します"
             )
 
-                send_discord_notification(
-                    webhook_url,
-                    "📢 **固定ないかもー**"
-                )
+            send_discord_notification(
+                webhook_url,
+                "📢 **固定ないかもー**"
+            )
 
-        return
+            return
 
-
-# --------------------------------
-# ○8人以上
-# --------------------------------
+        # --------------------------------
+        # ② ○8人以上
+        # --------------------------------
 
         if circle >= 8:
 
-        print(
-            f"○{circle}人なので通知します"
-        )
+            print(
+                f"○{circle}人なので通知します"
+            )
 
-        send_discord_notification(
-            webhook_url,
-            "📢 **今日は固定あります！**"
-        )
+            send_discord_notification(
+                webhook_url,
+                "📢 **今日は固定あります！**"
+            )
 
-    return
+            return
 
+        # --------------------------------
+        # ③ ○7人 + △1人
+        # --------------------------------
 
-# --------------------------------
-# ○7人 + △1人
-# --------------------------------
+        if (
+            circle == 7
+            and triangle == 1
+        ):
 
-        if circle == 7 and triangle == 1:
+            print(
+                "○7人 + △1人なので通知します"
+            )
 
-        print(
-            "○7人 + △1人なので通知します"
-        )
+            send_discord_notification(
+                webhook_url,
+                "📢 **固定あるかも？**"
+            )
 
-        send_discord_notification(
-            webhook_url,
-            "📢 **固定あるかも？（わかったら連絡して♡）**"
-        )
+            return
 
-    return
-
-# --------------------------------
-# その他
-# --------------------------------
+        # --------------------------------
+        # ④ その他
+        # --------------------------------
 
         print(
             "通知条件に一致しませんでした"
@@ -264,6 +354,7 @@ def check_and_notify():
 
         return
 
+    # 今日の日付が見つからなかった場合
     print(
         f"{today.month}/{today.day} "
         "のデータが見つかりませんでした。"
@@ -271,4 +362,5 @@ def check_and_notify():
 
 
 if __name__ == "__main__":
+
     check_and_notify()
