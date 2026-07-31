@@ -1,0 +1,28 @@
+name: Chouseisan Discord Notify
+
+on:
+  schedule:
+    # JST 20:30 = UTC 11:30
+    - cron: "30 11 * * *"
+  workflow_dispatch: {}  # 手動実行もできるようにしておく
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+
+      - name: Run check
+        env:
+          CHOUSEISAN_URL: ${{ vars.CHOUSEISAN_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python check_chouseisan.py
