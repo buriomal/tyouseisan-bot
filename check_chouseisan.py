@@ -230,7 +230,7 @@ def check_and_notify():
 
             send_discord_notification(
                 webhook_url,
-                "📢 **固定あるかも？**"
+                "📢 **固定あるかも？（わかったら連絡して）**"
             )
 
             return
