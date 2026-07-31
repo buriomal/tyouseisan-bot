@@ -83,8 +83,16 @@ def check_and_notify():
         print(f"ページにアクセス中: {url}")
         page.goto(url)
 
+        # ページのテーブルが読み込まれるまで最大10秒待機する
+        try:
+            page.wait_for_selector("table", timeout=10000)
+            print("テーブルの読み込みを確認しました")
+        except Exception as e:
+            print(f"テーブルの待機タイムアウト: {e}")
+
         # 調整さんのテーブル行を取得
         rows = page.locator("table tr").all_inner_texts()
+        print(f"取得した行の数: {len(rows)}")
         browser.close()
 
     if not rows:
@@ -98,7 +106,7 @@ def check_and_notify():
     if 20 <= hour <= 21:
         print("20〜21時台チェック開始")
         for row in rows:
-            parsed = parse_row(row)
+            parsed = (row)
             if parsed is None:
                 continue
 
