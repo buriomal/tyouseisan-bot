@@ -1,6 +1,6 @@
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from playwright.sync_api import sync_playwright
 import urllib.request
@@ -107,19 +107,65 @@ def check_and_notify():
     # 日本時間を取得
     jst = ZoneInfo("Asia/Tokyo")
     now = datetime.now(jst)
+
     today = now.date()
     hour = now.hour
+    minute = now.minute
 
     print(
         f"現在時刻 (JST): "
         f"{now.strftime('%Y-%m-%d %H:%M:%S')}"
     )
 
+    # --------------------------------
+    # 実行時間の判定
+    #
+    # 19時台:
+    # 翌日の予定を確認
+    #
+    # 20〜21時台:
+    # 当日の予定を確認
+    # --------------------------------
+
+    if 19 <= hour <= 19:
+        target_date = today + timedelta(days=1)
+        check_type = "翌日"
+
+    elif 20 <= hour <= 21:
+        target_date = today
+        check_type = "当日"
+
+    else:
+        print(
+            f"現在時刻は{hour}時のため、"
+            "チェック対象時間外です。"
+        )
+        return
+
+    print(
+        f"{check_type}の予定を確認します。"
+    )
+
+    print(
+        f"確認対象日: "
+        f"{target_date.strftime('%Y-%m-%d')}"
+    )
+
+    # --------------------------------
+    # 調整さんへアクセス
+    # --------------------------------
+
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+
+        browser = p.chromium.launch(
+            headless=True
+        )
+
         page = browser.new_page()
 
-        print(f"ページにアクセス中: {url}")
+        print(
+            f"ページにアクセス中: {url}"
+        )
 
         page.goto(
             url,
@@ -127,15 +173,19 @@ def check_and_notify():
             timeout=30000
         )
 
-        # ページのテーブルが読み込まれるまで最大10秒待機
+        # テーブルが読み込まれるまで最大10秒待機
         try:
             page.wait_for_selector(
                 "table",
                 timeout=10000
             )
-            print("テーブルの読み込みを確認しました")
+
+            print(
+                "テーブルの読み込みを確認しました"
+            )
 
         except Exception as e:
+
             print(
                 f"テーブルの待機タイムアウト: {e}"
             )
@@ -152,59 +202,113 @@ def check_and_notify():
         browser.close()
 
     if not rows:
+
         print(
             "テーブルの行が見つかりませんでした。"
         )
+
         return
 
-    # -----------------------------
-    # 19〜21時台に実行
-    # GitHub Actionsの遅延を考慮
-    # -----------------------------
-    if 19 <= hour <= 21:
+    # --------------------------------
+    # 取得した全行を解析
+    # --------------------------------
+
+    for row in rows:
+
+        parsed = parse_row(row)
+
+        if parsed is None:
+            continue
+
+        month, day, circle, triangle, cross = parsed
+
+        # --------------------------------
+        # 対象日と一致するか確認
+        # --------------------------------
+
+        if (
+            month != target_date.month
+            or day != target_date.day
+        ):
+            continue
 
         print(
-            "19〜21時台チェック開始"
+            f"対象日のデータを発見: "
+            f"{month}/{day}"
         )
 
-        for row in rows:
+        print(
+            f"○:{circle} "
+            f"△:{triangle} "
+            f"×:{cross}"
+        )
 
-            # 調整さんの行を解析
-            parsed = parse_row(row)
+        # --------------------------------
+        # パターン1
+        # ○8人
+        # --------------------------------
 
-            if parsed is None:
-                continue
+        if circle >= 8:
 
-            month, day, circle, triangle, cross = parsed
+            if check_type == "翌日":
 
-            # 今日の日付かつ○が8人の場合
-            if (
-                month == today.month
-                and day == today.day
-                and circle == 8
-            ):
-
-                print(
-                    "○8を発見しました"
+                message = (
+                    "📢 **明日は固定あります！**"
                 )
 
-                send_discord_notification(
-                    webhook_url,
+            else:
+
+                message = (
                     "📢 **今日は固定あります！**"
                 )
 
-                return
+            print(
+                f"○{circle}人なので通知します"
+            )
+
+            send_discord_notification(
+                webhook_url,
+                message
+            )
+
+            return
+
+        # --------------------------------
+        # パターン2
+        # ○7人 + △1人
+        # --------------------------------
+
+        if circle == 7 and triangle == 1:
+
+            message = (
+                "△の人は分かり次第連絡して♡"
+            )
+
+            print(
+                "○7人 + △1人を確認しました"
+            )
+
+            send_discord_notification(
+                webhook_url,
+                message
+            )
+
+            return
+
+        # --------------------------------
+        # それ以外
+        # --------------------------------
 
         print(
-            "条件に一致しませんでした"
+            "通知条件に一致しませんでした"
         )
 
-    else:
+        return
 
-        print(
-            f"現在時刻は{hour}時のため、"
-            "19〜21時台チェックの対象外です"
-        )
+    print(
+        f"{target_date.month}/{target_date.day} "
+        "のデータが見つかりませんでした。"
+    )
 
 
 if __name__ == "__main__":
