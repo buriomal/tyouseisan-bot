@@ -2,7 +2,7 @@ name: Chouseisan Discord Notify
 
 on:
   schedule:
-    - cron: '10 10 * * *'
+    - cron: '40 10 * * *'
   workflow_dispatch: {}  # 手動実行もできるようにしておく
 
 jobs:
