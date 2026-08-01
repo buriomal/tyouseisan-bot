@@ -2,7 +2,7 @@ name: Chouseisan Discord Notify
 
 on:
   schedule:
-    - cron: '*/15 * * * *'  # テスト用: 15分毎に実行（本番では元の cron に戻す）
+    - cron: '30 9 * * *'  # 毎日 18:30 JST (UTC 9:30) に実行
   workflow_dispatch: {}  # 手動実行もできるようにしておく
 
 jobs:
