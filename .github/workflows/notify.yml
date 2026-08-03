@@ -1,7 +1,6 @@
 name: Chouseisan Discord Notify
 
 on:
-  schedule:
   workflow_dispatch: {}  # 手動実行もできるようにしておく
 
 jobs:
